@@ -2,9 +2,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../models/post.dart';
-import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../viewmodels/home_viewmodel.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/shimmer_card.dart';
 import 'detail_screen.dart';
@@ -17,13 +18,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final ApiService _api = ApiService();
-  late Future<List<Post>> _postsFuture;
-
   @override
   void initState() {
     super.initState();
-    _postsFuture = _api.getPosts();
+    // Le pedimos al ViewModel que cargue los posts, no a la API directamente
+    Future.microtask(() => context.read<HomeViewModel>().loadPosts());
   }
 
   @override
@@ -54,25 +53,19 @@ class _HomeScreenState extends State<HomeScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'WEVERSE',
-                style: GoogleFonts.nunito(
-                  color: AppTheme.accent,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 3,
-                ),
-              ),
+              Text('WEVERSE',
+                  style: GoogleFonts.nunito(
+                      color: AppTheme.accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 3)),
               const SizedBox(height: 2),
-              Text(
-                'Feed',
-                style: GoogleFonts.nunito(
-                  color: AppTheme.textPrimary,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
-                ),
-              ),
+              Text('Feed',
+                  style: GoogleFonts.nunito(
+                      color: AppTheme.textPrimary,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5)),
             ],
           ),
           Container(
@@ -113,50 +106,42 @@ class _HomeScreenState extends State<HomeScreen> {
         color: active ? AppTheme.accent : AppTheme.bgCard,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
-        label,
-        style: GoogleFonts.nunito(
-          color: active ? AppTheme.bgPrimary : AppTheme.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
+      child: Text(label,
+          style: GoogleFonts.nunito(
+              color: active ? AppTheme.bgPrimary : AppTheme.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700)),
     );
   }
 
   Widget _buildPostList() {
-    return FutureBuilder<List<Post>>(
-      future: _postsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    // Consumer escucha los cambios del ViewModel y reconstruye solo esta parte
+    return Consumer<HomeViewModel>(
+      builder: (context, vm, _) {
+        if (vm.isLoading) {
           return ListView.builder(
             itemCount: 6,
             itemBuilder: (_, __) => const ShimmerCard(),
           );
         }
-        if (snapshot.hasError) {
-          return _buildError();
+        if (vm.error != null) {
+          return _buildError(vm);
         }
-        final posts = snapshot.data!;
         return RefreshIndicator(
           color: AppTheme.accent,
           backgroundColor: AppTheme.bgCard,
-          onRefresh: () async {
-            setState(() {
-              _postsFuture = _api.getPosts();
-            });
-          },
+          onRefresh: () => vm.loadPosts(), // refresca via ViewModel
           child: ListView.builder(
             physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 20),
-            itemCount: posts.length,
+            itemCount: vm.posts.length,
             itemBuilder: (context, index) {
               return _PostCard(
-                post: posts[index],
+                post: vm.posts[index],
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => DetailScreen(post: posts[index]),
+                    builder: (_) => DetailScreen(post: vm.posts[index]),
                   ),
                 ),
               );
@@ -167,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildError() {
+  Widget _buildError(HomeViewModel vm) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -180,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppTheme.textSecondary, fontSize: 16)),
           const SizedBox(height: 12),
           GestureDetector(
-            onTap: () => setState(() => _postsFuture = _api.getPosts()),
+            onTap: () => vm.loadPosts(), // reintenta via ViewModel
             child: Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -200,11 +185,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// _PostCard no cambia, sigue recibiendo el Post por parámetro
 class _PostCard extends StatelessWidget {
   final Post post;
   final VoidCallback onTap;
   final List<String> _fakeNames = const [
-    'Jeon Jungkook', 'Kim Taehyung', 'Park Jimin', 'Min Yoongi',
+    'LaLisa Manobal', 'Kim Jennie', 'Park Roseane', 'Kim Jisoo',
     'Jung Hoseok', 'Kim Namjoon', 'Jin Seokjin', 'Son Heung-min',
     'Lee Minho', 'Hwang Hyunjin',
   ];
@@ -231,7 +217,6 @@ class _PostCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
               Row(
                 children: [
                   AvatarWidget(name: authorName, size: 42),
@@ -242,26 +227,19 @@ class _PostCard extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              authorName,
-                              style: GoogleFonts.nunito(
-                                color: AppTheme.textPrimary,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                            Text(authorName,
+                                style: GoogleFonts.nunito(
+                                    color: AppTheme.textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700)),
                             const SizedBox(width: 4),
                             const Icon(Icons.verified_rounded,
                                 color: AppTheme.accent, size: 14),
                           ],
                         ),
-                        Text(
-                          timeAgo,
-                          style: GoogleFonts.nunito(
-                            color: AppTheme.textMuted,
-                            fontSize: 12,
-                          ),
-                        ),
+                        Text(timeAgo,
+                            style: GoogleFonts.nunito(
+                                color: AppTheme.textMuted, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -272,61 +250,46 @@ class _PostCard extends StatelessWidget {
                       color: AppTheme.accent.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      '#${post.id}',
-                      style: GoogleFonts.nunito(
-                        color: AppTheme.accent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                    child: Text('#${post.id}',
+                        style: GoogleFonts.nunito(
+                            color: AppTheme.accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800)),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              // Title
-              Text(
-                post.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.nunito(
-                  color: AppTheme.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  height: 1.4,
-                ),
-              ),
+              Text(post.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                      color: AppTheme.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      height: 1.4)),
               const SizedBox(height: 6),
-              Text(
-                post.body,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.nunito(
-                  color: AppTheme.textSecondary,
-                  fontSize: 13,
-                  height: 1.5,
-                ),
-              ),
+              Text(post.body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                      height: 1.5)),
               const SizedBox(height: 14),
-              // Footer
               Row(
                 children: [
                   _actionButton(Icons.favorite_border_rounded,
                       '${(post.id * 13) % 200}'),
                   const SizedBox(width: 20),
-                  _actionButton(
-                      Icons.chat_bubble_outline_rounded, '5'),
+                  _actionButton(Icons.chat_bubble_outline_rounded, '5'),
                   const SizedBox(width: 20),
                   _actionButton(Icons.share_outlined, ''),
                   const Spacer(),
-                  Text(
-                    'Ver más →',
-                    style: GoogleFonts.nunito(
-                      color: AppTheme.accent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  Text('Ver más →',
+                      style: GoogleFonts.nunito(
+                          color: AppTheme.accent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700)),
                 ],
               ),
             ],
